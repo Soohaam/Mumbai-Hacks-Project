@@ -6,6 +6,7 @@ function AboutUs() {
   const textStyle = "text-lg text-white mb-4";
   const listStyle = "list-disc pl-5 text-lg text-white";
 
+  
   return (
     <div className="p-6 md:p-10 lg:p-20 min-h-screen flex flex-col items-center relative overflow-hidden bg-gradient-to-r from-[#2B263F] to-[#4B5563]">
       <div className="absolute inset-0 -z-10">

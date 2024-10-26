@@ -22,6 +22,7 @@ function AboutUs() {
           </p>
         </div>
 
+
         {/* Our Team */}
         <div className={sectionStyle}>
           <h2 className={titleStyle}>Our Team</h2>

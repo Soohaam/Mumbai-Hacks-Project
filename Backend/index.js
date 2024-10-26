@@ -1,8 +1,12 @@
 const express = require('express');
+const path = require('path');
+const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const rateLimit = require('express-rate-limit');
-const cors = require('cors')
-
+const cors = require('cors');
+const fs = require('fs');
+const csv = require('csv-parser');
+const axios = require('axios');
 
 dotenv.config();
 const app = express();
@@ -10,25 +14,75 @@ const PORT = process.env.PORT || 5500;
 
 // Middleware
 app.use(express.json());
-
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
-});
-
-app.use(limiter);
-
-
 app.use(cors({
-  origin: 'http://localhost:3000', // Your React app's URL
+  origin: 'http://localhost:3000', // React app URL
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-// Import routes
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // Limit each IP to 100 requests per window
+});
+app.use(limiter);
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/women_safety', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('MongoDB connected...'))
+.catch(err => console.log(err));
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Home route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Define a Mongoose schema and model for storing crime data
+const crimeDataSchema = new mongoose.Schema({
+  location: String,
+  lat: Number,
+  lon: Number,
+  rape: Number,
+  murder: Number,
+  kidnapping: Number
+});
+
+const CrimeData = mongoose.model('CrimeData', crimeDataSchema);
+
+// Endpoint to fetch heatmap data
+app.get('/api/heatmap', async (req, res) => {
+  try {
+    // Retrieve all crime data from the database
+    const crimeData = await CrimeData.find();
+
+    // Prepare heatmap data
+    const heatmapData = crimeData.map(item => {
+      const intensity = item.rape + item.murder + item.kidnapping;
+      return {
+        lat: item.lat,
+        lon: item.lon,
+        intensity: intensity // Total intensity for the heatmap
+      };
+    });
+
+    res.json(heatmapData); // Send the heatmap data back to the client
+  } catch (error) {
+    console.error('Error fetching data from database:', error);
+    res.status(500).send('Error fetching data from database');
+  }
+});
+
+// Import additional routes (e.g., user routes)
 const userRoutes = require('./routes/userRoutes');
 app.use('/api/user', userRoutes); // Use userRoutes as middleware
 
-// Start server
+// Start the server
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });

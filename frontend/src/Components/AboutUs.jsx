@@ -13,6 +13,7 @@ function AboutUs() {
       </div>
       <h1 className="text-4xl font-extrabold text-[#cad9ed] mb-12 text-center">About Us</h1>
 
+
       <div className="space-y-8 w-full max-w-3xl">
         {/* Our Mission */}
         <div className={sectionStyle}>

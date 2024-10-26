@@ -1,218 +1,66 @@
+import React, { useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet-heatmap'; // Ensure this path is correct
+import 'leaflet/dist/leaflet.css'; // Ensure Leaflet CSS is imported
+import HeatmapOverlay from 'leaflet-heatmap';
 
-'use strict';
+const HeatmapLayer = ({ latlngs, userLocation, dangerLevel }) => {
+    const mapRef = useRef(null);
+    const heatmapLayerRef = useRef(null);
 
-L.HeatLayer = (L.Layer ? L.Layer : L.Class).extend({
+    useEffect(() => {
+        // Initialize the map only once
+        if (!mapRef.current) {
+            mapRef.current = L.map('map-canvas', {
+                center: [20.5937, 78.9629], // Center on India by default
+                zoom: 5,
+                layers: [
+                    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors',
+                        maxZoom: 21
+                    })
+                ]
+            });
 
-    options: {
-         minOpacity: 100,
-         maxZoom: 18,
-         radius:    100,
-         blur: 0,
-         max: 1.0
-     },
+            // Heatmap configuration
+            const cfg = {
+                radius: 0.1, // Smaller radius
+                maxOpacity: 0.8,
+                scaleRadius: true,
+                useLocalExtrema: true,
+                latField: 'lat',
+                lngField: 'lng',
+                valueField: 'count'
+            };
 
-    initialize: function (latlngs, options) {
-        this._latlngs = latlngs;
-        L.setOptions(this, options);
-    },
-
-    setLatLngs: function (latlngs) {
-        this._latlngs = latlngs;
-        return this.redraw();
-    },
-
-    addLatLng: function (latlng) {
-        this._latlngs.push(latlng);
-        return this.redraw();
-    },
-
-    setOptions: function (options) {
-        L.setOptions(this, options);
-        if (this._heat) {
-            this._updateOptions();
-        }
-        return this.redraw();
-    },
-    
-    getBounds: function () {
-        return L.latLngBounds(this._latlngs);  
-    },
-    
-    redraw: function () {
-        if (this._heat && !this._frame && this._map && !this._map._animating) {
-            this._frame = L.Util.requestAnimFrame(this._redraw, this);
-        }
-        return this;
-    },
-
-    onAdd: function (map) {
-        this._map = map;
-
-        if (!this._canvas) {
-            this._initCanvas();
+            // Create and add the heatmap layer
+            heatmapLayerRef.current = new HeatmapOverlay(cfg).addTo(mapRef.current);
         }
 
-        if (this.options.pane) {
-            this.getPane().appendChild(this._canvas);
-        }else{
-            map._panes.overlayPane.appendChild(this._canvas);
+        // Prepare heatmap data
+        const heatmapData = latlngs.map(latlng => ({
+            lat: latlng[0], // latitude
+            lng: latlng[1], // longitude
+            count: latlng[2] // danger level (count)
+        }));
+
+        // Add user's location to heatmap data if available
+        if (userLocation && dangerLevel !== undefined) {
+            const normalizedDangerLevel = Math.min(Math.max(dangerLevel, 0), 10); // Normalize danger level
+            heatmapData.push({
+                lat: userLocation[0],
+                lng: userLocation[1],
+                count: normalizedDangerLevel
+            });
         }
 
-        map.on('moveend', this._reset, this);
+        // Dynamically set max value based on data
+        const maxCount = Math.max(...heatmapData.map(point => point.count));
+        heatmapLayerRef.current.setData({ max: maxCount, data: heatmapData });
 
-        if (map.options.zoomAnimation && L.Browser.any3d) {
-            map.on('zoomanim', this._animateZoom, this);
-        }
+    }, [latlngs, userLocation, dangerLevel]);
 
-        this._reset();
-    },
-
-    onRemove: function (map) {
-        if (this.options.pane) {
-            this.getPane().removeChild(this._canvas);
-        }else{
-            map.getPanes().overlayPane.removeChild(this._canvas);
-        }
-
-        map.off('moveend', this._reset, this);
-
-        if (map.options.zoomAnimation) {
-            map.off('zoomanim', this._animateZoom, this);
-        }
-    },
-
-    addTo: function (map) {
-        map.addLayer(this);
-        return this;
-    },
-
-    _initCanvas: function () {
-        var canvas = this._canvas = L.DomUtil.create('canvas', 'leaflet-heatmap-layer leaflet-layer');
-
-        var originProp = L.DomUtil.testProp(['transformOrigin', 'WebkitTransformOrigin', 'msTransformOrigin']);
-        canvas.style[originProp] = '50% 50%';
-
-        var size = this._map.getSize();
-        canvas.width  = size.x;
-        canvas.height = size.y;
-
-        var animated = this._map.options.zoomAnimation && L.Browser.any3d;
-        L.DomUtil.addClass(canvas, 'leaflet-zoom-' + (animated ? 'animated' : 'hide'));
-
-        this._heat = simpleheat(canvas);
-        this._updateOptions();
-    },
-
-    _updateOptions: function () {
-        this._heat.radius(this.options.radius || this._heat.defaultRadius, this.options.blur);
-
-        if (this.options.gradient) {
-            this._heat.gradient(this.options.gradient);
-        }
-        if (this.options.max) {
-            this._heat.max(this.options.max);
-        }
-    },
-
-    _reset: function () {
-        var topLeft = this._map.containerPointToLayerPoint([0, 0]);
-        L.DomUtil.setPosition(this._canvas, topLeft);
-
-        var size = this._map.getSize();
-
-        if (this._heat._width !== size.x) {
-            this._canvas.width = this._heat._width  = size.x;
-        }
-        if (this._heat._height !== size.y) {
-            this._canvas.height = this._heat._height = size.y;
-        }
-
-        this._redraw();
-    },
-
-    _redraw: function () {
-        if (!this._map) {
-            return;
-        }
-        var data = [],
-            r = this._heat._r,
-            size = this._map.getSize(),
-            bounds = new L.Bounds(
-                L.point([-r, -r]),
-                size.add([r, r])),
-
-            max = this.options.max === undefined ? 1 : this.options.max,
-            maxZoom = this.options.maxZoom === undefined ? this._map.getMaxZoom() : this.options.maxZoom,
-            v = 1 / Math.pow(2, Math.max(0, Math.min(maxZoom - this._map.getZoom(), 12))),
-            cellSize = r / 2,
-            grid = [],
-            panePos = this._map._getMapPanePos(),
-            offsetX = panePos.x % cellSize,
-            offsetY = panePos.y % cellSize,
-            i, len, p, cell, x, y, j, len2, k;
-
-        // console.time('process');
-        for (i = 0, len = this._latlngs.length; i < len; i++) {
-            p = this._map.latLngToContainerPoint(this._latlngs[i]);
-            if (bounds.contains(p)) {
-                x = Math.floor((p.x - offsetX) / cellSize) + 2;
-                y = Math.floor((p.y - offsetY) / cellSize) + 2;
-
-                var alt =
-                    this._latlngs[i].alt !== undefined ? this._latlngs[i].alt :
-                    this._latlngs[i][2] !== undefined ? +this._latlngs[i][2] : 1;
-                k = alt * v;
-
-                grid[y] = grid[y] || [];
-                cell = grid[y][x];
-
-                if (!cell) {
-                    grid[y][x] = [p.x, p.y, k];
-
-                } else {
-                    cell[0] = (cell[0] * cell[2] + p.x * k) / (cell[2] + k); // x
-                    cell[1] = (cell[1] * cell[2] + p.y * k) / (cell[2] + k); // y
-                    cell[2] += k; // cumulated intensity value
-                }
-            }
-        }
-
-        for (i = 0, len = grid.length; i < len; i++) {
-            if (grid[i]) {
-                for (j = 0, len2 = grid[i].length; j < len2; j++) {
-                    cell = grid[i][j];
-                    if (cell) {
-                        data.push([
-                            Math.round(cell[0]),
-                            Math.round(cell[1]),
-                            Math.min(cell[2], max)
-                        ]);
-                    }
-                }
-            }
-        }
-        // console.timeEnd('process');
-
-        // console.time('draw ' + data.length);
-        this._heat.data(data).draw(this.options.minOpacity);
-        // console.timeEnd('draw ' + data.length);
-
-        this._frame = null;
-    },
-
-    _animateZoom: function (e) {
-        var scale = this._map.getZoomScale(e.zoom),
-            offset = this._map._getCenterOffset(e.center)._multiplyBy(-scale).subtract(this._map._getMapPanePos());
-
-        if (L.DomUtil.setTransform) {
-            L.DomUtil.setTransform(this._canvas, offset, scale);
-
-        } else {
-            this._canvas.style[L.DomUtil.TRANSFORM] = L.DomUtil.getTranslateString(offset) + ' scale(' + scale + ')';
-        }
-    }
-});
-
-L.heatLayer = function (latlngs, options) {
-    return new L.HeatLayer(latlngs, options);
+    return <div id="map-canvas" style={{ width: '100%', height: '300px' }}></div>;
 };
+
+export default HeatmapLayer;

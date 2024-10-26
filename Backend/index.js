@@ -4,9 +4,6 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
-const fs = require('fs');
-const csv = require('csv-parser');
-const axios = require('axios');
 
 dotenv.config();
 const app = express();
@@ -38,11 +35,6 @@ mongoose.connect('mongodb://localhost:27017/women_safety', {
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Home route
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
 // Define a Mongoose schema and model for storing crime data
 const crimeDataSchema = new mongoose.Schema({
   location: String,
@@ -58,10 +50,7 @@ const CrimeData = mongoose.model('CrimeData', crimeDataSchema);
 // Endpoint to fetch heatmap data
 app.get('/api/heatmap', async (req, res) => {
   try {
-    // Retrieve all crime data from the database
     const crimeData = await CrimeData.find();
-
-    // Prepare heatmap data
     const heatmapData = crimeData.map(item => {
       const intensity = item.rape + item.murder + item.kidnapping;
       return {
@@ -71,7 +60,7 @@ app.get('/api/heatmap', async (req, res) => {
       };
     });
 
-    res.json(heatmapData); // Send the heatmap data back to the client
+    res.json(heatmapData);
   } catch (error) {
     console.error('Error fetching data from database:', error);
     res.status(500).send('Error fetching data from database');
